@@ -1,0 +1,11 @@
+author: Kiyoto Tamura <owenestea@gmail.com>
+
+I am slowly writing an OCaml driver for MongoDB, mainly as
+a learning experience. Any feedback is appreciated, and the 
+code is in the Public Domain.
+
+Right now, all I have is a bson de/serializer and a simple
+implementation of the Mongo Wire Protocol. The next logical
+step is to write a reasonabl interface so that the user can
+interact with the database without worrying about the
+underlying protocol. Also, I should add a test suite.
