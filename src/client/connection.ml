@@ -35,12 +35,12 @@ let send_message conn msg =
   else ()
 
 let parse_response_header header =
-  let reader = Binary.unpack_signed_32 ~buf:header in
+  let readat = Binary.unpack_signed_32 ~buf:header in
   {
-    mlen = reader ~pos:0;
-    req_id = reader ~pos:4;
-    response_to = reader ~pos:8;
-    opcode = reader ~pos:12
+    mlen = readat ~pos:0;
+    req_id = readat ~pos:4;
+    response_to = readat ~pos:8;
+    opcode = readat ~pos:12
   }
 
 let read_message_body mlen sock = 
@@ -54,7 +54,6 @@ let read_message_body mlen sock =
         (Int32.add n (Int32.of_int bytes_read))
     end in
   reader "" 0l
-
 
 let send_and_receive_message conn msg req_id =
   let sock = conn.socket in 
