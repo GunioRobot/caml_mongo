@@ -7,6 +7,8 @@ type connection = {
   socket_addr:sockaddr
 }
 
+type connection_pool = connection list
+
 type response_header = {
   mlen:int32;
   response_to:int32;
@@ -24,8 +26,22 @@ let create_connection ?(port = 27017) ~hostname =
     let sock_addr = ADDR_INET ((gethostbyname hostname).h_addr_list.(0), port) in
     let sock = socket PF_INET SOCK_STREAM 0 in
     connect sock sock_addr;
-    {socket = sock; socket_addr = sock_addr}
-  with e -> raise Connection_not_created
+    Some {socket = sock; socket_addr = sock_addr}
+  with e -> None
+
+let create_connection_pool ?(port = 27017) ?(num_conn = 10) ~hostname =
+  let rec aux i pool = 
+    if i = num_conn then pool
+    else begin
+      let newpool = match create_connection ~port:port ~hostname with
+        | Some conn -> conn :: pool
+        | None -> pool in
+      aux (i + 1) newpool
+    end in
+  aux 0 []
+
+let delete_connection_pool pool = 
+  List.iter (fun conn -> shutdown conn SHUTDOWN_ALL) pool
 
 let send_message conn msg = 
   let mlen = (String.length msg) in
@@ -63,8 +79,6 @@ let send_and_receive_message conn msg req_id =
     | 16 ->
       let response_header = parse_response_header header_buffer in
       if response_header.response_to = req_id then begin
-          Printf.printf "%i bytes should be read\n" 
-            (Int32.to_int (response_header.mlen));
           header_buffer ^ 
           (read_message_body (Int32.sub response_header.mlen 16l) sock);
         end

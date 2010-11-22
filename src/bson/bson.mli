@@ -25,3 +25,4 @@ and binary_subtype = Generic | Function | GenericOld
 
 val document_to_bson : document -> string
 val bson_to_document : string -> document
+val bson_to_multidocs : string -> document list

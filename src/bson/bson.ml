@@ -115,12 +115,12 @@ let rec _bson_to_element buf acc =
     let ename, rest =  _extract_ename (S.drop buf 1) in
     match buf.[0] with 
     | '\x01' (* double *) ->
-        let newacc = (ename, Double (Binary.unpack_float 
-          ~buf:(S.sub rest 0 8) ~pos:0)):: acc in
+        let newacc = (ename,
+                      Double (Binary.unpack_float ~buf:(S.take rest 8) ~pos:0)):: acc in
         _bson_to_element (S.drop rest 8) newacc
     | '\x02' (* string, need to change to UTF-8 *) ->
         let str_size = Int32.to_int 
-          (Binary.unpack_signed_32 ~buf:(S.sub rest 0 4) ~pos:0) in
+          (Binary.unpack_signed_32 ~buf:(S.take rest 4) ~pos:0) in
         let newacc = (ename, String (S.sub rest 4 (str_size - 1))) :: acc in
         _bson_to_element (S.drop rest (4 + str_size)) newacc
     | '\x03' (* nested document *) ->
@@ -137,7 +137,7 @@ let rec _bson_to_element buf acc =
           ((ename, Array ar) :: acc)
     | '\x05' (* binary *) ->
         let num_bytes = Int32.to_int
-          (Binary.unpack_signed_32 ~buf:(S.sub rest 0 4) ~pos:0) in
+          (Binary.unpack_signed_32 ~buf:(S.take rest 4) ~pos:0) in
         let subtype = match rest.[4] with
           | '\x00' -> Generic
           | '\x01' -> Function
@@ -171,17 +171,17 @@ let rec _bson_to_element buf acc =
         | _ -> raise Bson_decode_failure)
     | '\x0D' (* JS code *) ->
         let code_size = Int32.to_int 
-          (Binary.unpack_signed_32 ~buf:(S.sub rest 0 4) ~pos:0) in
+          (Binary.unpack_signed_32 ~buf:(S.take rest 4) ~pos:0) in
         let newacc = (ename, JSCode (S.sub rest 4 (code_size - 1))) :: acc in
         _bson_to_element (S.drop rest (4 + code_size)) newacc
     | '\x0E' (* symbol *) ->
         let str_size = Int32.to_int 
-          (Binary.unpack_signed_32 ~buf:(S.sub rest 0 4) ~pos:0) in
+          (Binary.unpack_signed_32 ~buf:(S.take rest 4) ~pos:0) in
         let newacc = (ename, Symbol (S.sub rest 4 (str_size - 1))) :: acc in
         _bson_to_element (S.drop rest (4 + str_size)) newacc
     | '\x0F' (* JS code with scope *) ->
         let elt_size = Int32.to_int
-          (Binary.unpack_signed_32 ~buf:(S.sub rest 0 4) ~pos:0) in
+          (Binary.unpack_signed_32 ~buf:(S.take rest 4) ~pos:0) in
         let code_size = Int32.to_int
           (Binary.unpack_signed_32 ~buf:(S.sub rest 4 4) ~pos:0) in
         let code = S.sub rest 8 (code_size - 1) in
@@ -191,15 +191,15 @@ let rec _bson_to_element buf acc =
           ((ename, JSCodeWithScope(code, scope_doc)) :: acc)
     | '\x10' (* int32 *) ->
         let newacc = (ename, Int32 (Binary.unpack_signed_32 
-          ~buf:(S.sub rest 0 4) ~pos:0)):: acc in
+          ~buf:(S.take rest 4) ~pos:0)):: acc in
         _bson_to_element (S.drop rest 4) newacc
     | '\x11' (* timestamp *) ->
         let newacc = (ename, Timestamp (Binary.unpack_signed_64 
-          ~buf:(S.sub rest 0 8) ~pos:0)):: acc in
+          ~buf:(S.take rest 8) ~pos:0)):: acc in
         _bson_to_element (S.drop rest 8) newacc
     | '\x12' (* int64 *) ->
         let newacc = (ename, Int64 (Binary.unpack_signed_64 
-          ~buf:(S.sub rest 0 8) ~pos:0)):: acc in
+          ~buf:(S.take rest 8) ~pos:0)):: acc in
         _bson_to_element (S.drop rest 8) newacc
     | '\xFF' (* min key *) ->
         _bson_to_element rest ((ename, MinKey) :: acc)
@@ -217,3 +217,12 @@ and _bson_to_list buf =
   )
 
 let bson_to_document = _bson_to_list
+
+let bson_to_multidocs bson_str =
+  let rec process buf acc =
+    match buf with
+    | "" -> acc
+    | _ -> 
+        let len = Int32.to_int (Binary.unpack_signed_32 ~buf:(S.take buf 4) ~pos:0) in
+        process (S.drop buf len) ((bson_to_document (S.take buf len))::acc)
+  process bson_str []
