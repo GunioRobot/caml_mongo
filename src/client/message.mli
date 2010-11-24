@@ -1,4 +1,4 @@
-(* depends on ../bson/bson.mli *)
+(* depends on /bson/bson.mli *)
 
 val update : coll_name:string -> flags:int32 -> selector:Bson.document ->
              update:Bson.document -> string
@@ -11,3 +11,4 @@ val query : ?ret_field_selector:Bson.document -> coll_name:string ->
 val getmore: coll_name:string -> num_rtn:int32 -> cursor_id:int64 ->
              string 
 val kill_cursors : int64 list -> string
+

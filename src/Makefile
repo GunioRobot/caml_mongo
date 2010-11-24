@@ -1,19 +1,9 @@
-all: makeclient
+.PHONY: all
+SUBDIR=util bson client
 
-makeutil:
-	cd util; make
-cleanutil:
-	cd util; make clean
+all:
+	for d in ${SUBDIR}; do (cd $$d; $(MAKE)); done;
 
-makebson: makeutil
-	cd bson; make
-cleanbson:
-	cd bson; make clean
-
-makeclient: makebson
-	cd client; make
-cleanclient:
-	cd client; make clean
-
-clean: cleanutil cleanbson cleanclient
+clean:
+	for d in ${SUBDIR}; do (cd $$d; $(MAKE) clean); done;
 

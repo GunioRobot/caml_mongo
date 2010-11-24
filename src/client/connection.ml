@@ -1,21 +1,17 @@
+open Binary
 open Unix
-module Bson = Bson
 module S = Xstring
 
 type t = {
   socket:file_descr;
   socket_addr:sockaddr
 }
-
-type connection_pool = t list
-
 type reply_header = {
   mlen:int32;
   response_to:int32;
   req_id:int32;
   opcode:int32
 }
-
 type reply_body = {
   response_flag:int32;
   cursor_id:int64;
@@ -23,13 +19,16 @@ type reply_body = {
   num_docs:int32;
   docs:Bson.document list
 }
-
 type reply = {
   header:reply_header;
   body:reply_body
 }
 
-let create_connection ?(port = 27017) ~hostname = 
+type connection_pool = t list
+type delete_option = DeleteAll | DeleteOne
+
+
+let create_connection ?(port = 27017) hostname = 
   try
     let sock_addr = ADDR_INET ((gethostbyname hostname).h_addr_list.(0), port) in
     let sock = socket PF_INET SOCK_STREAM 0 in
@@ -37,11 +36,11 @@ let create_connection ?(port = 27017) ~hostname =
     Some {socket = sock; socket_addr = sock_addr}
   with e -> None
 
-let create_connection_pool ?(port = 27017) ?(num_conn = 10) ~hostname =
+let create_connection_pool ?(num_conn = 10) ?(port = 27017) hostname =
   let rec aux i pool = 
     if i = num_conn then pool
     else begin
-      let newpool = match create_connection ~port:port ~hostname with
+      let newpool = match create_connection ~port:port hostname with
         | Some conn -> conn :: pool
         | None -> pool in
       aux (i + 1) newpool
@@ -60,7 +59,7 @@ module Communicate = struct
     else ()
 
   let parse_reply_header header =
-    let readat = Binary.unpack_signed_32 ~buf:header in
+    let readat = unpack_signed_32 ~buf:header in
     {
       mlen = readat ~pos:0;
       req_id = readat ~pos:4;
@@ -69,8 +68,8 @@ module Communicate = struct
     }
 
   let parse_reply_body body =
-    let readat32 = Binary.unpack_signed_32 ~buf:body in
-    let readat64 = Binary.unpack_signed_64 ~buf:body in
+    let readat32 = unpack_signed_32 ~buf:body in
+    let readat64 = unpack_signed_64 ~buf:body in
     {
       response_flag = readat32 ~pos:0;
       cursor_id = readat64 ~pos:4;
@@ -110,11 +109,9 @@ module Communicate = struct
     ignore (send_message conn msg);
     read_response ();
 end
-;;
 
-(*val update : coll_name:string -> flags:int32 -> selector:Bson.document ->
-             update:Bson.document -> string*)
-let update ?(upsert = false) ?(multi = false) ~conn ~coll_name ~selector ~update =
+
+let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
   let flags = match upsert, multi with
   | false, false -> 0l
   | true, false -> 1l
@@ -124,7 +121,17 @@ let update ?(upsert = false) ?(multi = false) ~conn ~coll_name ~selector ~update
               ~selector:selector ~update:update in
   Communicate.send_message conn msg
 
-    
-    
-  
+let insert ~conn ~coll_name ~docs =
+  let msg = Message.insert ~coll_name:coll_name ~docs:docs in
+  Communicate.send_message conn msg
 
+let delete ?(delete_option = DeleteAll) ~conn ~coll_name selector =
+  let flags = (function DeleteAll -> 0l | DeleteOne -> 1l) delete_option in
+  let msg = Message.delete ~coll_name:coll_name ~flags:flags ~selector in
+  Communicate.send_message conn msg
+
+let find ?(ret_field_selector = []) ~conn ~coll_name selector = 
+  let msg = Message.query ~ret_field_selector:ret_field_selector
+              ~coll_name:coll_name ~query:selector ~flags:0l
+              ~num_skip:0l ~num_rtn:10l in 
+  Communicate.send_and_receive_message conn msg 0l (* req_id = 0*)

@@ -1,8 +1,6 @@
 (* module to create messages *)
 open Binary
 module S = Xstring
-module Bson = Bson
-exception Malformed_reply
 
 let zero = pack_signed_32 0l
 
@@ -79,5 +77,6 @@ let kill_cursors cursor_ids =
   let header = create_header ~mlen:mlength ~request_id:0l ~response_to:0l
                              ~opcode:2007l in
   header ^ zero ^ num_cursor_packed ^ cursors
+
 
 
