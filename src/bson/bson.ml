@@ -224,5 +224,5 @@ let bson_to_multidocs bson_str =
     | "" -> acc
     | _ -> 
         let len = Int32.to_int (Binary.unpack_signed_32 ~buf:(S.take buf 4) ~pos:0) in
-        process (S.drop buf len) ((bson_to_document (S.take buf len))::acc)
+        process (S.drop buf len) ((bson_to_document (S.take buf len))::acc) in
   process bson_str []

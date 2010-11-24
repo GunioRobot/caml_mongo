@@ -1,3 +1,5 @@
+(* depends on ../bson/bson.mli *)
+
 val update : coll_name:string -> flags:int32 -> selector:Bson.document ->
              update:Bson.document -> string
 val delete : coll_name:string -> flags:int32 -> selector:Bson.document ->
