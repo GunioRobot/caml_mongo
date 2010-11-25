@@ -159,9 +159,9 @@ let rec _bson_to_element buf acc =
           | _ -> raise Bson_decode_failure in
         _bson_to_element (S.drop rest 1) ((ename, Boolean b) :: acc)
     | '\x09' (* UTC datetime *) ->
-        _bson_to_element (S.drop rest 4)
+        _bson_to_element (S.drop rest 8)
           ((ename, UTCDatetime (Binary.unpack_signed_64 
-            ~buf:(S.take rest 4) ~pos:0)) :: acc)
+            ~buf:(S.take rest 8) ~pos:0)) :: acc)
     | '\x0A' (* NULL value *) ->
        _bson_to_element rest ((ename, Null) :: acc) 
     | '\x0B' (* regex *) -> (

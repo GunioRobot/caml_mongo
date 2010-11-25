@@ -42,7 +42,7 @@ let insert ~coll_name ~docs =
                              ~opcode:2002l in
   header ^ zero ^ coll_cstr ^ doc_bson
 
-let query ?(ret_field_selector = []) ~coll_name ~flags ~num_skip 
+let query ~ret_field_selector ~coll_name ~flags ~num_skip 
           ~num_rtn ~query =
   let query_bson = Bson.document_to_bson query in
   let ret_field_selector_bson = Bson.document_to_bson ret_field_selector in
