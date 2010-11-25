@@ -2,37 +2,67 @@ open Binary
 open Unix
 module S = Xstring
 
-type t = {
+type connection = {
   socket:file_descr;
-  socket_addr:sockaddr
+  socket_addr:sockaddr;
+}
+type t (* this is the connection pool *) = {
+  num_conn:int;
+  pool:connection option array;
 }
 type reply_header = {
   mlen:int32;
   response_to:int32;
   req_id:int32;
-  opcode:int32
+  opcode:int32;
 }
 type reply_meta = {
   cursor_not_found:bool;
   query_failure:bool;
   shard_config_stale:bool;
-  await_capable:bool
+  await_capable:bool;
 }
 type reply_body = {
   response_flags:reply_meta;
   cursor_id:int64;
   starting_from:int32;
   num_docs:int32;
-  docs:Bson.document Stream.t
+  docs:Bson.document Stream.t;
 }
 type cursor = {
   conn:t;
   coll_name:string;
-  mutable reply:reply_body
+  mutable reply:reply_body;
 }
-type connection_pool = t list
 type delete_option = DeleteAll | DeleteOne
 
+let create_single_connection ?(port = 27017) hostname = 
+  try
+    let sock_addr = ADDR_INET ((gethostbyname hostname).h_addr_list.(0), port) in
+    let sock = socket PF_INET SOCK_STREAM 0 in
+    connect sock sock_addr;
+    Some {socket = sock; socket_addr = sock_addr}
+  with e -> None
+
+let create_connection ?(num_conn = 10) ?(port = 27017) hostname =
+  Random.self_init (); (* this is going to be used for pick_connection *)
+  let pool = Array.init num_conn
+    (fun _ -> create_single_connection ~port:port hostname) in
+  Random.self_init ();
+  {
+    num_conn = num_conn;
+    pool = pool;
+  }
+
+let pick_connection conn_pool = 
+  let n = conn_pool.num_conn - 1 in
+  let i = Random.int n in
+  match conn_pool.pool.(i) with
+  | Some c -> c
+  | None -> failwith "found a dropped connection"
+
+let delete_connection_pool pool = 
+  Array.iter (fun conn -> shutdown conn.socket SHUTDOWN_ALL) pool
 module Communicate = struct
   let send_message conn msg = 
     let mlen = (String.length msg) in
@@ -103,44 +133,33 @@ module Cursor = struct
   type t = cursor
   type cursor_val = Done | Val of Bson.document
 
+  let kill_cursor c =
+    let msg = Message.kill_cursors [c.reply.cursor_id] in
+    Communicate.send_message (pick_connection c.conn) msg
+
   let next c =
     if c.reply.response_flags.cursor_not_found
-    then Done
+    then begin
+      kill_cursor c;
+      Done;
+    end
     else begin
       try Val (Stream.next c.reply.docs)
       with e ->
+        let conn = pick_connection c.conn in
         let msg = Message.getmore ~coll_name:c.coll_name 
                     ~num_rtn:10l ~cursor_id:c.reply.cursor_id in
-        c.reply <- Communicate.send_and_receive_message c.conn msg 0l;
+        c.reply <- Communicate.send_and_receive_message conn msg 0l;
         try Val (Stream.next c.reply.docs)
-        with e -> Done
+        with e ->
+          kill_cursor c;
+          Done;
     end
 end
 
-let create_connection ?(port = 27017) hostname = 
-  try
-    let sock_addr = ADDR_INET ((gethostbyname hostname).h_addr_list.(0), port) in
-    let sock = socket PF_INET SOCK_STREAM 0 in
-    connect sock sock_addr;
-    Some {socket = sock; socket_addr = sock_addr}
-  with e -> None
-
-let create_connection_pool ?(num_conn = 10) ?(port = 27017) hostname =
-  let rec aux i pool = 
-    if i = num_conn then pool
-    else begin
-      let newpool = match create_connection ~port:port hostname with
-        | Some conn -> conn :: pool
-        | None -> pool in
-      aux (i + 1) newpool
-    end in
-  aux 0 []
-
-let delete_connection_pool pool = 
-  List.iter (fun conn -> shutdown conn.socket SHUTDOWN_ALL) pool
-
 
 let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
+  let conn = pick_connection conn in
   let flags = match upsert, multi with
   | false, false -> 0l
   | true, false -> 1l
@@ -151,18 +170,25 @@ let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
   Communicate.send_message conn msg
 
 let insert ~conn ~coll_name ~docs =
+  let conn = pick_connection conn in
   let msg = Message.insert ~coll_name:coll_name ~docs:docs in
   Communicate.send_message conn msg
 
 let delete ?(delete_option = DeleteAll) ~conn ~coll_name selector =
+  let conn = pick_connection conn in
   let flags = (function DeleteAll -> 0l | DeleteOne -> 1l) delete_option in
   let msg = Message.delete ~coll_name:coll_name ~flags:flags ~selector in
   Communicate.send_message conn msg
 
 let find ?(ret_field_selector = []) ~conn ~coll_name selector = 
+  let single_conn = pick_connection conn in
   let msg = Message.query ~ret_field_selector:ret_field_selector
               ~coll_name:coll_name ~query:selector ~flags:0l
               ~num_skip:0l ~num_rtn:10l in 
-  let reply_body = Communicate.send_and_receive_message conn msg 0l in
-  {conn = conn; coll_name = coll_name; reply = reply_body}
+  let reply_body = Communicate.send_and_receive_message single_conn msg 0l in 
+  {
+    conn = conn; 
+    coll_name = coll_name; 
+    reply = reply_body
+  }
 

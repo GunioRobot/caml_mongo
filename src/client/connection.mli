@@ -1,4 +1,5 @@
 type t
+
 type reply_header = {
   mlen:int32;
   response_to:int32;
@@ -33,12 +34,9 @@ module Cursor : sig
   val next : t -> cursor_val
 end
 
-type connection_pool = t list
 type delete_option = DeleteAll | DeleteOne
-val create_connection :
-  ?port:int -> string -> t option
-val create_connection_pool : 
-  ?num_conn:int -> ?port:int -> string -> connection_pool
+val create_connection : 
+  ?num_conn:int -> ?port:int -> string -> t
 val update :
   ?upsert:bool -> ?multi:bool -> conn:t ->coll_name:string -> 
     Bson.document -> Bson.document -> unit
