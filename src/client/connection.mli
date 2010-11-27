@@ -1,5 +1,7 @@
 type t
+type cursor
 
+(*
 type reply_header = {
   mlen:int32;
   response_to:int32;
@@ -27,21 +29,25 @@ type cursor = {
   coll_name:string;
   mutable reply:reply_body
 }
+*)
 
 module Cursor : sig
   type t = cursor
   type cursor_val = Done | Val of Bson.document
   val next : t -> cursor_val
+  val kill_cursor : t -> unit
 end
 
 type delete_option = DeleteAll | DeleteOne
 val create_connection : 
   ?num_conn:int -> ?port:int -> string -> t
+val delete_connection : t -> unit
+
 val update :
   ?upsert:bool -> ?multi:bool -> conn:t ->coll_name:string -> 
     Bson.document -> Bson.document -> unit
 val insert :
-  conn:t -> coll_name:string -> docs:Bson.document list -> unit
+  conn:t -> coll_name:string -> Bson.document list -> unit
 val delete :
   ?delete_option:delete_option -> conn:t -> coll_name:string -> 
     Bson.document -> unit

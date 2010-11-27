@@ -1,12 +1,13 @@
+.PHONY: all native bytecode clean
 SRC=binary.ml xstring.ml
 
-all: native bytecode
+all: bytecode
 
 native:
 	ocamlopt -c ${SRC}
 
 bytecode:
-	ocamlc -c ${SRC}
+	ocamlc -c -annot -warn-error A ${SRC}
 
 clean:
 	rm -f *.cmo *.cmi *.cmx *.o

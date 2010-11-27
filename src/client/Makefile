@@ -1,7 +1,7 @@
 MESSAGEUTIL=bson.cma 
 CONNECTIONUTIL=bson.cma unix.cma message.cma
 DIRPATH=-I ../util -I ../bson
-OCAMLC=ocamlc -warn-error A
+OCAMLC=ocamlc -warn-error A -annot
 OCAML=/opt/local/bin/rlwrap ocaml
 
 all: message connection

@@ -9,6 +9,8 @@ type connection = {
 type t (* this is the connection pool *) = {
   num_conn:int;
   pool:connection option array;
+  hostname:string;
+  port:int;
 }
 type reply_header = {
   mlen:int32;
@@ -44,31 +46,45 @@ let create_single_connection ?(port = 27017) hostname =
     Some {socket = sock; socket_addr = sock_addr}
   with e -> None
 
+let delete_connection conn =
+  Array.iter (fun conn -> match conn with
+    | Some c -> shutdown c.socket SHUTDOWN_ALL
+    | None -> ()) conn.pool
+
 let create_connection ?(num_conn = 10) ?(port = 27017) hostname =
   Random.self_init (); (* this is going to be used for pick_connection *)
   let pool = Array.init num_conn
     (fun _ -> create_single_connection ~port:port hostname) in
-  Random.self_init ();
-  {
+  let conn = {
     num_conn = num_conn;
     pool = pool;
-  }
+    port = port;
+    hostname = hostname;
+  } in begin
+    Gc.finalise (fun c -> delete_connection c) conn;
+    conn;
+  end
 
 let pick_connection conn_pool = 
   let n = conn_pool.num_conn - 1 in
   let i = Random.int n in
   match conn_pool.pool.(i) with
   | Some c -> c
-  | None -> failwith "found a dropped connection"
+  | None -> begin
+      match create_single_connection ~port:conn_pool.port conn_pool.hostname with
+      | Some c as c_opt ->
+          conn_pool.pool.(i) <- c_opt;
+          c;
+      | None -> failwith "Failed to reconnect!"
+  end
 
-let delete_connection_pool pool = 
-  Array.iter (fun conn -> shutdown conn.socket SHUTDOWN_ALL) pool
+
 module Communicate = struct
   let send_message conn msg = 
     let mlen = (String.length msg) in
     let bytes_written = write conn.socket msg 0 (String.length msg) in
     if mlen > bytes_written then
-      failwith "write to socket failed in send_message"
+      failwith "Could not send all the bytes!"
     else ()
 
   let parse_reply_header header =
@@ -123,10 +139,12 @@ module Communicate = struct
               (Int32.sub reply_header.mlen 16l) sock)
         else
           failwith "the response's request id did not 
-                    match the original request id"
+          match the original request id";
       | _ -> failwith "failed to read the header" in
-    ignore (send_message conn msg);
-    read_response ();
+    begin
+      send_message conn msg;
+      read_response ();
+    end
 end
 
 module Cursor = struct
@@ -135,7 +153,9 @@ module Cursor = struct
 
   let kill_cursor c =
     let msg = Message.kill_cursors [c.reply.cursor_id] in
-    Communicate.send_message (pick_connection c.conn) msg
+    try
+      Communicate.send_message (pick_connection c.conn) msg
+    with _ -> ()
 
   let next c =
     if c.reply.response_flags.cursor_not_found
@@ -144,7 +164,8 @@ module Cursor = struct
       Done;
     end
     else begin
-      try Val (Stream.next c.reply.docs)
+      try 
+        Val (Stream.next c.reply.docs)
       with e ->
         let conn = pick_connection c.conn in
         let msg = Message.getmore ~coll_name:c.coll_name 
@@ -155,8 +176,12 @@ module Cursor = struct
           kill_cursor c;
           Done;
     end
-end
+  
+  let make_gcable c =
+    Gc.finalise kill_cursor c;
+    c;
 
+end
 
 let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
   let conn = pick_connection conn in
@@ -169,10 +194,13 @@ let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
               ~selector:selector ~update:update in
   Communicate.send_message conn msg
 
-let insert ~conn ~coll_name ~docs =
-  let conn = pick_connection conn in
-  let msg = Message.insert ~coll_name:coll_name ~docs:docs in
-  Communicate.send_message conn msg
+let insert ~conn ~coll_name docs =
+  match docs with
+  | [] -> ()
+  | _ ->
+    let conn = pick_connection conn in
+    let msg = Message.insert ~coll_name:coll_name ~docs:docs in
+    Communicate.send_message conn msg
 
 let delete ?(delete_option = DeleteAll) ~conn ~coll_name selector =
   let conn = pick_connection conn in
@@ -186,9 +214,9 @@ let find ?(ret_field_selector = []) ~conn ~coll_name selector =
               ~coll_name:coll_name ~query:selector ~flags:0l
               ~num_skip:0l ~num_rtn:10l in 
   let reply_body = Communicate.send_and_receive_message single_conn msg 0l in 
-  {
-    conn = conn; 
-    coll_name = coll_name; 
-    reply = reply_body
+  Cursor.make_gcable {
+      conn = conn; 
+      coll_name = coll_name; 
+      reply = reply_body;
   }
 
