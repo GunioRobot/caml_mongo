@@ -35,24 +35,24 @@ module Cursor : sig
   type t = cursor
   type cursor_val = Done | Val of Bson.document
   val next : t -> cursor_val
-  val kill_cursor : t -> unit
 end
 
 type delete_option = DeleteAll | DeleteOne
+type command_status = Succeeded | Failed
+
 val create_connection : 
   ?num_conn:int -> ?port:int -> string -> t
-val delete_connection : t -> unit
 
 val update :
   ?upsert:bool -> ?multi:bool -> conn:t ->coll_name:string -> 
-    Bson.document -> Bson.document -> unit
+    Bson.document -> Bson.document -> command_status
 val insert :
-  conn:t -> coll_name:string -> Bson.document list -> unit
+  conn:t -> coll_name:string -> Bson.document list -> command_status 
 val delete :
   ?delete_option:delete_option -> conn:t -> coll_name:string -> 
-    Bson.document -> unit
+    Bson.document -> command_status
 (* there are actually many options on find, but for now I am ignoring
  * all of them*)
-val find : 
+val find :
   ?ret_field_selector:Bson.document -> conn:t -> coll_name:string ->
-    Bson.document -> cursor
+    Bson.document -> cursor option

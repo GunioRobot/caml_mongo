@@ -37,6 +37,8 @@ type cursor = {
   mutable reply:reply_body;
 }
 type delete_option = DeleteAll | DeleteOne
+type command_status = Succeeded | Failed
+
 
 let create_single_connection ?(port = 27017) hostname = 
   try
@@ -75,17 +77,16 @@ let pick_connection conn_pool =
       | Some c as c_opt ->
           conn_pool.pool.(i) <- c_opt;
           c;
-      | None -> failwith "Failed to reconnect!"
+      | None -> failwith "Failed to connect!"
   end
-
 
 module Communicate = struct
   let send_message conn msg = 
     let mlen = (String.length msg) in
     let bytes_written = write conn.socket msg 0 (String.length msg) in
     if mlen > bytes_written then
-      failwith "Could not send all the bytes!"
-    else ()
+      Failed
+    else Succeeded
 
   let parse_reply_header header =
     let readat = unpack_signed_32 ~buf:header in
@@ -135,16 +136,14 @@ module Communicate = struct
       | 16 ->
         let reply_header = parse_reply_header header_buffer in
         if reply_header.response_to = req_id then
-            parse_reply_body (read_message_body 
-              (Int32.sub reply_header.mlen 16l) sock)
+          Some (parse_reply_body (read_message_body 
+            (Int32.sub reply_header.mlen 16l) sock))
         else
-          failwith "the response's request id did not 
-          match the original request id";
-      | _ -> failwith "failed to read the header" in
-    begin
-      send_message conn msg;
-      read_response ();
-    end
+          None
+      | _ -> None in
+    match send_message conn msg with
+    | Failed -> None
+    | Succeeded -> read_response ();
 end
 
 module Cursor = struct
@@ -153,14 +152,12 @@ module Cursor = struct
 
   let kill_cursor c =
     let msg = Message.kill_cursors [c.reply.cursor_id] in
-    try
-      Communicate.send_message (pick_connection c.conn) msg
-    with _ -> ()
+    Communicate.send_message (pick_connection c.conn) msg
 
   let next c =
     if c.reply.response_flags.cursor_not_found
     then begin
-      kill_cursor c;
+      ignore (kill_cursor c);
       Done;
     end
     else begin
@@ -170,15 +167,23 @@ module Cursor = struct
         let conn = pick_connection c.conn in
         let msg = Message.getmore ~coll_name:c.coll_name 
                     ~num_rtn:10l ~cursor_id:c.reply.cursor_id in
-        c.reply <- Communicate.send_and_receive_message conn msg 0l;
-        try Val (Stream.next c.reply.docs)
-        with e ->
-          kill_cursor c;
-          Done;
+        match Communicate.send_and_receive_message conn msg 0l with
+        | Some r -> begin 
+            c.reply <- r;
+            try
+              Val (Stream.next c.reply.docs);
+            with e ->
+              ignore (kill_cursor c);
+              Done;
+          end
+        | None -> failwith "connection was dropped unexpectedly!"
     end
   
   let make_gcable c =
-    Gc.finalise kill_cursor c;
+    Gc.finalise (fun x -> 
+      match kill_cursor x with
+      | Succeeded _ -> ()
+      | Failed -> failwith "connection was dropped unexpectedly!") c;
     c;
 
 end
@@ -196,7 +201,7 @@ let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
 
 let insert ~conn ~coll_name docs =
   match docs with
-  | [] -> ()
+  | [] -> Succeeded
   | _ ->
     let conn = pick_connection conn in
     let msg = Message.insert ~coll_name:coll_name ~docs:docs in
@@ -213,10 +218,13 @@ let find ?(ret_field_selector = []) ~conn ~coll_name selector =
   let msg = Message.query ~ret_field_selector:ret_field_selector
               ~coll_name:coll_name ~query:selector ~flags:0l
               ~num_skip:0l ~num_rtn:10l in 
-  let reply_body = Communicate.send_and_receive_message single_conn msg 0l in 
-  Cursor.make_gcable {
-      conn = conn; 
-      coll_name = coll_name; 
-      reply = reply_body;
-  }
+  match Communicate.send_and_receive_message single_conn msg 0l with
+  | None -> None
+  | Some reply_body ->
+    Some (
+      Cursor.make_gcable {
+          conn = conn; 
+          coll_name = coll_name; 
+          reply = reply_body;
+      })
 
