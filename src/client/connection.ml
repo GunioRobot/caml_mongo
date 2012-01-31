@@ -40,7 +40,7 @@ type delete_option = DeleteAll | DeleteOne
 type command_status = Succeeded | Failed
 
 
-let create_single_connection ?(port = 27017) hostname = 
+let create_single_connection ?(port = 27017) hostname =
   try
     let sock_addr = ADDR_INET ((gethostbyname hostname).h_addr_list.(0), port) in
     let sock = socket PF_INET SOCK_STREAM 0 in
@@ -67,7 +67,7 @@ let create_connection ?(num_conn = 10) ?(port = 27017) hostname =
     conn;
   end
 
-let pick_connection conn_pool = 
+let pick_connection conn_pool =
   let n = conn_pool.num_conn - 1 in
   let i = Random.int n in
   match conn_pool.pool.(i) with
@@ -81,7 +81,7 @@ let pick_connection conn_pool =
   end
 
 module Communicate = struct
-  let send_message conn msg = 
+  let send_message conn msg =
     let mlen = (String.length msg) in
     let bytes_written = write conn.socket msg 0 (String.length msg) in
     if mlen > bytes_written then
@@ -116,12 +116,12 @@ module Communicate = struct
       docs = Stream.of_list (Bson.bson_to_multidocs (S.drop body 20))
     }
 
-  let read_message_body mlen sock = 
+  let read_message_body mlen sock =
     let buffer_size = 4096 in
     let buffer = String.create 4096 in
     let rec reader msg_sofar n =
       if n >= mlen then msg_sofar
-      else begin 
+      else begin
         let bytes_read = read sock buffer 0 buffer_size in
         reader (msg_sofar ^ (String.sub buffer 0 bytes_read))
           (Int32.add n (Int32.of_int bytes_read))
@@ -129,14 +129,14 @@ module Communicate = struct
     reader "" 0l
 
   let send_and_receive_message conn msg req_id =
-    let sock = conn.socket in 
+    let sock = conn.socket in
     let read_response () =
       let header_buffer = String.create 16 in
       match read sock header_buffer 0 16 with
       | 16 ->
         let reply_header = parse_reply_header header_buffer in
         if reply_header.response_to = req_id then
-          Some (parse_reply_body (read_message_body 
+          Some (parse_reply_body (read_message_body
             (Int32.sub reply_header.mlen 16l) sock))
         else
           None
@@ -161,14 +161,14 @@ module Cursor = struct
       Done;
     end
     else begin
-      try 
+      try
         Val (Stream.next c.reply.docs)
       with e ->
         let conn = pick_connection c.conn in
-        let msg = Message.getmore ~coll_name:c.coll_name 
+        let msg = Message.getmore ~coll_name:c.coll_name
                     ~num_rtn:10l ~cursor_id:c.reply.cursor_id in
         match Communicate.send_and_receive_message conn msg 0l with
-        | Some r -> begin 
+        | Some r -> begin
             c.reply <- r;
             try
               Val (Stream.next c.reply.docs);
@@ -178,9 +178,9 @@ module Cursor = struct
           end
         | None -> failwith "connection was dropped unexpectedly!"
     end
-  
+
   let make_gcable c =
-    Gc.finalise (fun x -> 
+    Gc.finalise (fun x ->
       match kill_cursor x with
       | Succeeded _ -> ()
       | Failed -> failwith "connection was dropped unexpectedly!") c;
@@ -195,7 +195,7 @@ let update ?(upsert = false) ?(multi = false) ~conn ~coll_name selector update =
   | true, false -> 1l
   | false, true -> 2l
   | true, true -> 3l in
-  let msg = Message.update ~coll_name:coll_name ~flags:flags 
+  let msg = Message.update ~coll_name:coll_name ~flags:flags
               ~selector:selector ~update:update in
   Communicate.send_message conn msg
 
@@ -213,18 +213,18 @@ let delete ?(delete_option = DeleteAll) ~conn ~coll_name selector =
   let msg = Message.delete ~coll_name:coll_name ~flags:flags ~selector in
   Communicate.send_message conn msg
 
-let find ?(ret_field_selector = []) ~conn ~coll_name selector = 
+let find ?(ret_field_selector = []) ~conn ~coll_name selector =
   let single_conn = pick_connection conn in
   let msg = Message.query ~ret_field_selector:ret_field_selector
               ~coll_name:coll_name ~query:selector ~flags:0l
-              ~num_skip:0l ~num_rtn:10l in 
+              ~num_skip:0l ~num_rtn:10l in
   match Communicate.send_and_receive_message single_conn msg 0l with
   | None -> None
   | Some reply_body ->
     Some (
       Cursor.make_gcable {
-          conn = conn; 
-          coll_name = coll_name; 
+          conn = conn;
+          coll_name = coll_name;
           reply = reply_body;
       })
 

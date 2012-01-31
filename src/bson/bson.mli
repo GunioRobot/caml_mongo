@@ -1,10 +1,10 @@
 type value =
 | Double of float
 | String of string
-| Document of document 
+| Document of document
 | Array of value array
 | ObjectId of string
-| BinaryData of (binary_subtype * string) 
+| BinaryData of (binary_subtype * string)
 (*char is the subtype, string is the
   bytes of data  *)
 | Boolean of bool
@@ -20,7 +20,7 @@ type value =
 | MinKey
 | MaxKey
 and document = (string * value) list
-and binary_subtype = Generic | Function | GenericOld 
+and binary_subtype = Generic | Function | GenericOld
                    | UUID | MD5 | UserDefined of char
 
 val document_to_bson : document -> string

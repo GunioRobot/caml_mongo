@@ -1,4 +1,4 @@
-(* packing and unpacking binary 
+(* packing and unpacking binary
  * Heavily reference Jane Street Core, but packing is done in place,
  * and per BSON's spec, little endian is used. *)
 

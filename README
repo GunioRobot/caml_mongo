@@ -1,7 +1,7 @@
 author: Kiyoto Tamura <owenestea@gmail.com>
 
 I am slowly writing an OCaml driver for MongoDB, mainly as
-a learning experience. Any feedback is appreciated, and the 
+a learning experience. Any feedback is appreciated, and the
 code is in the Public Domain.
 
 Right now, all I have is a bson de/serializer and a simple

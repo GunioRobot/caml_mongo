@@ -1,4 +1,4 @@
-MESSAGEUTIL=bson.cma 
+MESSAGEUTIL=bson.cma
 CONNECTIONUTIL=bson.cma unix.cma message.cma
 DIRPATH=-I ../util -I ../bson
 OCAMLC=ocamlc -warn-error A -annot
@@ -10,7 +10,7 @@ connection: message
 	${OCAMLC} ${DIRPATH} -a -o connection.cma ${CONNECTIONUTIL}  connection.mli connection.ml
 
 message:
-	${OCAMLC} ${DIRPATH} -a -o message.cma ${MESSAGEUTIL} message.mli message.ml 
+	${OCAMLC} ${DIRPATH} -a -o message.cma ${MESSAGEUTIL} message.mli message.ml
 
 
 clean:

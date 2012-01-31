@@ -40,16 +40,16 @@ end
 type delete_option = DeleteAll | DeleteOne
 type command_status = Succeeded | Failed
 
-val create_connection : 
+val create_connection :
   ?num_conn:int -> ?port:int -> string -> t
 
 val update :
-  ?upsert:bool -> ?multi:bool -> conn:t ->coll_name:string -> 
+  ?upsert:bool -> ?multi:bool -> conn:t ->coll_name:string ->
     Bson.document -> Bson.document -> command_status
 val insert :
-  conn:t -> coll_name:string -> Bson.document list -> command_status 
+  conn:t -> coll_name:string -> Bson.document list -> command_status
 val delete :
-  ?delete_option:delete_option -> conn:t -> coll_name:string -> 
+  ?delete_option:delete_option -> conn:t -> coll_name:string ->
     Bson.document -> command_status
 (* there are actually many options on find, but for now I am ignoring
  * all of them*)
